@@ -30,7 +30,6 @@ class PerAvg(Server):
             # choose several clients to send back upated model to server
             for client in self.selected_clients:
                 client.train()
-                client.train()
 
             # threads = [Thread(target=client.train)
             #            for client in self.selected_clients]
