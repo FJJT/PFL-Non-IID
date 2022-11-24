@@ -21,7 +21,7 @@ class clientPerAvg(Client):
         self.optimizer = PerAvgOptimizer(self.model.parameters(), lr=self.learning_rate)
 
     def train(self):
-        trainloader = self.load_train_data(self.batch_size*2)
+        trainloader = self.load_train_data(self.batch_size*3)
         start_time = time.time()
 
         # self.model.to(self.device)
@@ -51,11 +51,11 @@ class clientPerAvg(Client):
                 # step 2,只计算梯度，没有更新参数
                 if type(X) == type([]):
                     x = [None, None]
-                    x[0] = X[0][self.batch_size:].to(self.device)
-                    x[1] = X[1][self.batch_size:]
+                    x[0] = X[0][self.batch_size:self.batch_size*2].to(self.device)
+                    x[1] = X[1][self.batch_size:self.batch_size*2]
                 else:
-                    x = X[self.batch_size:].to(self.device)
-                y = Y[self.batch_size:].to(self.device)
+                    x = X[self.batch_size:self.batch_size*2].to(self.device)
+                y = Y[self.batch_size:self.batch_size*2].to(self.device)
                 data_batch_2 = (x, y)
                 grads_1st = self.compute_grad(temp_model, data_batch_2)
 
@@ -63,11 +63,11 @@ class clientPerAvg(Client):
 
                 if type(X) == type([]):
                     x = [None, None]
-                    x[0] = X[0][self.batch_size:].to(self.device)
-                    x[1] = X[1][self.batch_size:]
+                    x[0] = X[0][self.batch_size*2:].to(self.device)
+                    x[1] = X[1][self.batch_size*2:]
                 else:
-                    x = X[self.batch_size:].to(self.device)
-                y = Y[self.batch_size:].to(self.device)
+                    x = X[self.batch_size*2:].to(self.device)
+                y = Y[self.batch_size*2:].to(self.device)
                 data_batch_3 = (x, y)
                 grads_2nd = self.compute_grad(self.model, data_batch_3, v=grads_1st, second_order_grads=True)
 
@@ -90,71 +90,30 @@ class clientPerAvg(Client):
         self.train_time_cost['total_cost'] += time.time() - start_time
 
 
-    def train_one_step(self):
-        testloader = self.load_test_data(self.batch_size)
-        iter_testloader = iter(testloader)
+    def train_one_step(self, epoch):
+        trainloader = self.load_train_data(self.batch_size)
         # self.model.to(self.device)
         self.model.train()
 
-        # step 1
-        (x, y) = next(iter_testloader)
-        if type(x) == type([]):
-            x[0] = x[0].to(self.device)
-        else:
-            x = x.to(self.device)
-        y = y.to(self.device)
-        self.optimizer.zero_grad()
-        output = self.model(x)
-        loss = self.loss(output, y)
-        loss.backward()
-        self.optimizer.step()
-
-        # step 2
-        (x, y) = next(iter_testloader)
-        if type(x) == type([]):
-            x[0] = x[0].to(self.device)
-        else:
-            x = x.to(self.device)
-        y = y.to(self.device)
-        self.optimizer.zero_grad()
-        output = self.model(x)
-        loss = self.loss(output, y)
-        loss.backward()
-        self.optimizer.step(beta=self.beta)
+        for e in range(epoch):
+            for X, Y in trainloader:
+                if type(X) == type([]):
+                    x = [None, None]
+                    x[0] = X[0].to(self.device)
+                    x[1] = X[1]
+                else:
+                    x = X.to(self.device)
+                y = Y.to(self.device)
+                self.optimizer.zero_grad()
+                output = self.model(x)
+                loss = self.loss(output, y)
+                loss.backward()
+                self.optimizer.step(beta=self.alpha)
 
         # self.model.cpu()
 
-    def get_hessian(self, x, y, model):
-        # ind = np.random.randint(0, high=len(data), size=None, dtype=int)
-        # seq, label = data[ind]
-        seq = x
-        label = y
-        y_pred = model(seq)
-        loss_function = self.loss
-        loss = loss_function(y_pred, label)
-        grads = torch.autograd.grad(loss, model.parameters(), retain_graph=True, create_graph=True)
-        hessian_params = []
-        for k in range(len(grads)):
-            hess_params = torch.zeros_like(grads[k])
-            for i in range(grads[k].size(0)):
-                # w or b?
-                if len(grads[k].size()) == 2:
-                    for j in range(grads[k].size(1)):
-                        hess_params[i, j] = \
-                        torch.autograd.grad(grads[k][i][j], model.parameters(), retain_graph=True)[k][i, j]
-                else:
-                    hess_params[i] = torch.autograd.grad(grads[k][i].sum(), model.parameters(), retain_graph=True)[k][i]
-            hessian_params.append(hess_params)
 
-        return hessian_params
-
-    def compute_grad(
-            self,
-            model: torch.nn.Module,
-            data_batch: Tuple[torch.Tensor, torch.Tensor],
-            v: Union[Tuple[torch.Tensor, ...], None] = None,
-            second_order_grads=False,
-    ):
+    def compute_grad(self,model: torch.nn.Module,data_batch: Tuple[torch.Tensor, torch.Tensor],v: Union[Tuple[torch.Tensor, ...], None] = None,second_order_grads=False,):
         x, y = data_batch
         if second_order_grads:
             frz_model_params = copy.deepcopy(model.state_dict())

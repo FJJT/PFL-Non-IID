@@ -21,12 +21,6 @@ class PerAvg(Server):
             self.selected_clients = self.select_clients()
             # send all parameter for clients
             self.send_models()
-
-            if i%self.eval_gap == 0:
-                print(f"\n-------------Round number: {i}-------------")
-                print("\nEvaluate global model with one step update")
-                self.evaluate_one_step()
-
             # choose several clients to send back upated model to server
             for client in self.selected_clients:
                 client.train()
@@ -38,6 +32,11 @@ class PerAvg(Server):
 
             self.receive_models()
             self.aggregate_parameters()
+            # test acc
+            if i % self.eval_gap == 0:
+                print(f"\n-------------Round number: {i}-------------")
+                print("\nEvaluate global model with one step update")
+                self.evaluate_one_step()
 
         print("\nBest global accuracy.")
         # self.print_(max(self.rs_test_acc), max(
@@ -52,7 +51,7 @@ class PerAvg(Server):
         models_temp = []
         for c in self.clients:
             models_temp.append(copy.deepcopy(c.model))
-            c.train_one_step()
+            c.train_one_step(3)
 
         stats = self.test_metrics()
 
